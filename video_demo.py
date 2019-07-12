@@ -59,14 +59,9 @@ def prep_image(img, inp_dim):
 
 used_label_idxs = []
 def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
+    global used_label_idxs
     detected_obj_dicts = []
     use_label_idxs = []
-
-    if len(previous_detected_obj_dicts) == 0:
-        pre_use_label_idxs = []
-    else:
-        pre_use_label_idxs = [d['label_idx'] for d in previous_detected_obj_dicts]
-        pre_use_label_idxs.sort()
 
     label_idx = 0
 
@@ -89,6 +84,9 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
         if label in write_labels:
             # 前のフレームに車体が無かったとき
             if len(previous_detected_obj_dicts) == 0:
+                if idx == 0:
+                    used_label_idxs = []
+
                 color = colors[label_idx % len(colors)]
 
                 detected_obj_dict = {'label_idx': label_idx,
@@ -98,8 +96,9 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                                       'bottom': bottom,
                                       'center': center,
                                       'color': color,
-                                      'label': label,
-                                      'is_first_frame_detected': True}
+                                      'is_first_frame_detected': True,
+                                      'direction': 'unknown',
+                                      'speed': 'unknown'}
 
                 # 検出した車体間の座標の近さを計算
                 closes = []
@@ -114,6 +113,9 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
 
                 use_label_idxs.append(label_idx)
                 use_label_idxs.sort()
+                if not label_idx in used_label_idxs:
+                    used_label_idxs.append(label_idx)
+                used_label_idxs.sort()
                 detected_obj_dicts.append(detected_obj_dict)
                 label_idx += 1
             # 前のフレームに車体が有ったとき
@@ -124,13 +126,18 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                 color = None
 
                 break_flag = False
-                for max_distance in (10, 20, 30, 40, 50):
+                for max_distance in (10, 20, 30, 40, 50): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
                     for d in previous_detected_obj_dicts:
                         pre_center = d['center']
                         pre_label_idx = d['label_idx']
                         pre_color = d['color']
 
-                        distance = math.sqrt((center[0] - pre_center[0]) ** 2 + (center[1] - pre_center[1]) ** 2)
+                        # 走行していることを考慮する
+                        speed = d['speed']
+                        if speed != 'unknown':
+                            distance = math.sqrt((center[0] - pre_center[0] - speed) ** 2 + (center[1] - pre_center[1]) ** 2)
+                        else:
+                            distance = math.sqrt((center[0] - pre_center[0]) ** 2 + (center[1] - pre_center[1]) ** 2)
 
                         if distance > max_distance: # あまりにも離れていたら止める
                             continue
@@ -146,7 +153,7 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                 # 前フレームに同一と思われる物体がない場合（新しい物体だと認識する）
                 if min_distance is None:
                     # 最後のラベル番号+1
-                    label_idx = pre_use_label_idxs[-1] + 1
+                    label_idx = used_label_idxs[-1] + 1
 
                     color = colors[label_idx % len(colors)]
 
@@ -157,7 +164,9 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                                           'bottom': bottom,
                                           'center': center,
                                           'color': color,
-                                          'is_first_frame_detected': True}
+                                          'is_first_frame_detected': True,
+                                          'direction': 'unknown',
+                                          'speed': 'unknown'}
 
                     # 検出した車体間の座標の近さを計算
                     closes = []
@@ -172,6 +181,9 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
 
                     use_label_idxs.append(label_idx)
                     use_label_idxs.sort()
+                    if not label_idx in used_label_idxs:
+                        used_label_idxs.append(label_idx)
+                    used_label_idxs.sort()
                     detected_obj_dicts.append(detected_obj_dict)
                 # 前フレームに同一と思われる物体がある場合
                 else:
@@ -182,10 +194,12 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
 
                     # 同フレームにすでに、そのラベル番号が振られた物体がある場合
                     if label_idx in use_label_idxs:
-                        label_idx = pre_use_label_idxs[-1] + 1
+                        label_idx = used_label_idxs[-1] + 1
                         direction = 'unknown'
+                        speed = 'unknown'
                     else:
-                        direction = 'left' if center[0] - pre_center[0] < 0 else 'right'
+                        speed = center[0] - pre_center[0]
+                        direction = 'left' if speed < 0 else 'right'
 
                     detected_obj_dict = {'label_idx': label_idx,
                                           'left': left,
@@ -195,7 +209,8 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                                           'center': center,
                                           'color': color,
                                           'is_first_frame_detected': False,
-                                          'direction': direction}
+                                          'direction': direction,
+                                          'speed': speed}
 
                     # 検出した車体間の座標の近さを計算
                     closes = []
@@ -210,10 +225,12 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
 
                     use_label_idxs.append(label_idx)
                     use_label_idxs.sort()
+                    if not label_idx in used_label_idxs:
+                        used_label_idxs.append(label_idx)
+                    used_label_idxs.sort()
                     detected_obj_dicts.append(detected_obj_dict)
 
     # 同じ物体を複数回検出している問題を解決
-    print('closenesses:', closenesses)
     for idx, closes in reversed(list(enumerate(closenesses))):
         for close in closes:
             if close < 100:
@@ -222,6 +239,7 @@ def create_detected_obj_dicts(output, img, previous_detected_obj_dicts):
                 use_label_idxs.remove(label_idx)
 
     print('use_label_idxs:', use_label_idxs)
+    print('closenesses:', closenesses)
     print('detected_obj_dicts:')
     for i, d in enumerate(detected_obj_dicts):
         print(str(i) + ':', d)
