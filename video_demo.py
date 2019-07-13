@@ -16,6 +16,12 @@ import math
 
 
 write_labels = ['car', 'bus', 'truck']
+ENTRY_RANGES = None
+EXIT_RANGES = None
+ENTRY_FROM_LEFT_COUNT = 0
+ENTRY_FROM_RIGHT_COUNT = 0
+EXIT_TO_LEFT_COUNT = 0
+EXIT_TO_RIGHT_COUNT = 0
 
 colors = [(18, 0, 230),
           (0, 152, 243),
@@ -58,9 +64,10 @@ def prep_image(img, inp_dim):
     return img_, orig_im, dim
 
 used_label_idxs = []
-stack_label_idxs = []
+stack_dicts = []
 def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
-    global used_label_idxs, stack_label_idxs
+    global used_label_idxs, stack_dicts
+    global ENTRY_FROM_LEFT_COUNT, ENTRY_FROM_RIGHT_COUNT, EXIT_TO_LEFT_COUNT, EXIT_TO_RIGHT_COUNT
 
     height, width, _ = img.shape
 
@@ -77,13 +84,13 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
         left, top, right, bottom = map(int, c1 + c2)
         area = (right - left) * (bottom - top)
         # 小さく映っている車は排除
-        if area < 2000:
+        if area < 8000 * resize_ratio ** 2:
             continue
 
         center = (int((right - left) / 2 + left), int((bottom - top) / 2 + top))
 
         # 端っこに映っている車は排除
-        if center[0] < width * 0.1 or width * 0.9 < center[0]:
+        if center[0] < width * 0.05 or width * 0.95 < center[0]:
             continue
 
         cls = int(x[-1])
@@ -94,8 +101,40 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
             if len(pre_detected_obj_dicts) == 0:
                 if idx == 0:
                     used_label_idxs = []
+                    stack_dicts = []
 
                 color = colors[label_idx % len(colors)]
+
+                # 同じ物体を複数回検出している問題を解決
+                break_flag = False
+                for k, v in detected_obj_dicts.items():
+                    c_l = abs(left - v['left'])
+                    c_t = abs(top - v['top'])
+                    c_r = abs(right - v['right'])
+                    c_b = abs(bottom - v['bottom'])
+                    close = c_l + c_t + c_r + c_b
+
+                    if close < 400 * resize_ratio ** 2:
+                        break_flag = True
+                        break
+                if break_flag: continue
+
+                # 車体が進入範囲にあるか調べる
+                if ENTRY_RANGES[0][0] < center[0] < ENTRY_RANGES[0][1]:
+                    is_entried_from_left = True
+                    is_entried_from_right = False
+                    ENTRY_FROM_LEFT_COUNT += 1
+                elif ENTRY_RANGES[1][0] < center[0] < ENTRY_RANGES[1][1]:
+                    is_entried_from_left = False
+                    is_entried_from_right = True
+                    ENTRY_FROM_RIGHT_COUNT += 1
+                else:
+                    is_entried_from_left = False
+                    is_entried_from_right = False
+
+                # 車体が退出範囲にあるか調べる
+                is_exited_to_left = False
+                is_exited_to_right = False
 
                 detected_obj_dict = {'left': left,
                                      'top': top,
@@ -105,7 +144,11 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                                      'color': color,
                                      'is_first_frame_detected': True,
                                      'direction': 'unknown',
-                                     'speed': 'unknown'}
+                                     'speed': 'unknown',
+                                     'is_entried_from_left': is_entried_from_left,
+                                     'is_entried_from_right': is_entried_from_right,
+                                     'is_exited_to_left': is_exited_to_left,
+                                     'is_exited_to_right': is_exited_to_right}
 
                 # 検出した車体間の座標の近さを計算
                 closes = []
@@ -133,7 +176,8 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                 color = None
 
                 break_flag = False
-                for max_distance in (10, 20, 30, 40, 50): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
+                for max_distance in (40, 80, 120, 160, 200): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
+                    max_distance *= resize_ratio ** 2
                     for k, v in pre_detected_obj_dicts.items():
                         pre_center = v['center']
                         pre_label_idx = k
@@ -161,9 +205,30 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                 if min_distance is None:
                     # 最後のラベル番号+1
                     label_idx = used_label_idxs[-1] + 1
+                    is_first_frame_detected = True
+                    direction = 'unknown'
+                    speed = 'unknown'
+
+                    # 車体が進入範囲にあるか調べる
+                    if ENTRY_RANGES[0][0] < center[0] < ENTRY_RANGES[0][1]:
+                        is_entried_from_left = True
+                        is_entried_from_right = False
+                        ENTRY_FROM_LEFT_COUNT += 1
+                    elif ENTRY_RANGES[1][0] < center[0] < ENTRY_RANGES[1][1]:
+                        is_entried_from_left = False
+                        is_entried_from_right = True
+                        ENTRY_FROM_RIGHT_COUNT += 1
+                    else:
+                        is_entried_from_left = False
+                        is_entried_from_right = False
+
+                    # 車体が退出範囲にあるか調べる
+                    is_exited_to_left = False
+                    is_exited_to_right = False
 
                     # 車体が重なりから脱出したものか判定
-                    for idx, (stack_label_idx1, stack_label_idx2) in reversed(list(enumerate(stack_label_idxs))):
+                    for idx, stack_dict in reversed(list(enumerate(stack_dicts))):
+                        stack_label_idx1, stack_label_idx2 = stack_dict.keys()
                         if stack_label_idx2 in detected_obj_dicts:
                             stack_v = detected_obj_dicts[stack_label_idx2]
                             left2 = stack_v['left']
@@ -171,9 +236,18 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
 
                             if left < left2 < right < right2 or left2 < left < right2 < right:
                                 label_idx = stack_label_idx1
-                                stack_label_idxs.pop(idx)
+
+                                d = stack_dict[label_idx]
+                                direction = d['direction']
+                                speed = d['speed']
+                                is_entried_from_left = d['is_entried_from_left']
+                                is_entried_from_right = d['is_entried_from_right']
+                                is_exited_to_left = d['is_exited_to_left']
+                                is_exited_to_right = d['is_exited_to_right']
+
+                                stack_dicts.pop(idx)
                         else:
-                            stack_label_idxs.pop(idx)
+                            stack_dicts.pop(idx)
 
 
                     color = colors[label_idx % len(colors)]
@@ -184,9 +258,13 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                                          'bottom': bottom,
                                          'center': center,
                                          'color': color,
-                                         'is_first_frame_detected': True,
-                                         'direction': 'unknown',
-                                         'speed': 'unknown'}
+                                         'is_first_frame_detected': is_first_frame_detected,
+                                         'direction': direction,
+                                         'speed': speed,
+                                         'is_entried_from_left': is_entried_from_left,
+                                         'is_entried_from_right': is_entried_from_right,
+                                         'is_exited_to_left': is_exited_to_left,
+                                         'is_exited_to_right': is_exited_to_right}
 
                     # 検出した車体間の座標の近さを計算
                     closes = []
@@ -207,29 +285,106 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                     detected_obj_dicts[label_idx] = detected_obj_dict
                 # 前フレームに同一と思われる物体がある場合
                 else:
+                    # 同じ物体を複数回検出している問題を解決
+                    break_flag = False
+                    for k, v in detected_obj_dicts.items():
+                        c_l = abs(left - v['left'])
+                        c_t = abs(top - v['top'])
+                        c_r = abs(right - v['right'])
+                        c_b = abs(bottom - v['bottom'])
+                        close = c_l + c_t + c_r + c_b
+
+                        if close < 400 * resize_ratio ** 2:
+                            break_flag = True
+                            break
+                    if break_flag: continue
+
                     for k, v in detected_obj_dicts.items():
                         if label_idx == k:
                             pre_center = v['center']
                             break
 
-                    # 同フレームにすでに、そのラベル番号が振られた物体がある場合
+                    # 同フレームにすでに、そのラベル番号が振られた物体がある場合、新しい物体とする
                     if label_idx in use_label_idxs:
                         label_idx = used_label_idxs[-1] + 1
                         direction = 'unknown'
                         speed = 'unknown'
+
+                        # 車体が進入範囲にあるか調べる
+                        if ENTRY_RANGES[0][0] < center[0] < ENTRY_RANGES[0][1]:
+                            is_entried_from_left = True
+                            is_entried_from_right = False
+                            ENTRY_FROM_LEFT_COUNT += 1
+                        elif ENTRY_RANGES[1][0] < center[0] < ENTRY_RANGES[1][1]:
+                            is_entried_from_left = False
+                            is_entried_from_right = True
+                            ENTRY_FROM_RIGHT_COUNT += 1
+                        else:
+                            is_entried_from_left = False
+                            is_entried_from_right = False
+
+                        # 車体が退出範囲にあるか調べる
+                        is_exited_to_left = False
+                        is_exited_to_right = False
+
+                        detected_obj_dict = {'left': left,
+                                             'top': top,
+                                             'right': right,
+                                             'bottom': bottom,
+                                             'center': center,
+                                             'color': color,
+                                             'is_first_frame_detected': True,
+                                             'direction': 'unknown',
+                                             'speed': 'unknown',
+                                             'is_entried_from_left': is_entried_from_left,
+                                             'is_entried_from_right': is_entried_from_right,
+                                             'is_exited_to_left': is_exited_to_left,
+                                             'is_exited_to_right': is_exited_to_right}
                     else:
                         speed = center[0] - pre_center[0]
                         direction = 'left' if speed < 0 else 'right'
 
-                    detected_obj_dict = {'left': left,
-                                         'top': top,
-                                         'right': right,
-                                         'bottom': bottom,
-                                         'center': center,
-                                         'color': color,
-                                         'is_first_frame_detected': False,
-                                         'direction': direction,
-                                         'speed': speed}
+                        # 車体が進入範囲にあるか調べる
+                        is_entried_from_left = pre_detected_obj_dicts[label_idx]['is_entried_from_left']
+                        is_exited_to_right = pre_detected_obj_dicts[label_idx]['is_exited_to_right']
+                        is_entried_from_right = pre_detected_obj_dicts[label_idx]['is_entried_from_right']
+                        is_exited_to_left = pre_detected_obj_dicts[label_idx]['is_exited_to_left']
+                        if ENTRY_RANGES[0][0] < center[0] < ENTRY_RANGES[0][1]:
+                            # 左右の進入判定がなく、右への退出判定がない場合
+                            if not is_entried_from_left and not is_entried_from_right and not is_exited_to_right:
+                                is_entried_from_left = True
+                                ENTRY_FROM_LEFT_COUNT += 1
+                        elif ENTRY_RANGES[1][0] < center[0] < ENTRY_RANGES[1][1]:
+                            # 左右の進入判定がなく、左への退出判定がない場合
+                            if not is_entried_from_left and not is_entried_from_right and not is_exited_to_left:
+                                is_entried_from_right = True
+                                ENTRY_FROM_RIGHT_COUNT += 1
+
+                        # 車体が退出範囲にあるか調べる
+                        if EXIT_RANGES[0][0] < center[0] < EXIT_RANGES[0][1]:
+                            # 右からの進入判定があり、左への退出判定がない場合
+                            if is_entried_from_right and not is_exited_to_left:
+                                is_exited_to_left = True
+                                EXIT_TO_LEFT_COUNT += 1
+                        elif EXIT_RANGES[1][0] < center[0] < EXIT_RANGES[1][1]:
+                            # 左からの進入判定があり、右への退出判定がない場合
+                            if is_entried_from_left and not is_exited_to_right:
+                                is_exited_to_right = True
+                                EXIT_TO_RIGHT_COUNT += 1
+
+                        detected_obj_dict = {'left': left,
+                                             'top': top,
+                                             'right': right,
+                                             'bottom': bottom,
+                                             'center': center,
+                                             'color': color,
+                                             'is_first_frame_detected': False,
+                                             'direction': direction,
+                                             'speed': speed,
+                                             'is_entried_from_left': is_entried_from_left,
+                                             'is_entried_from_right': is_entried_from_right,
+                                             'is_exited_to_left': is_exited_to_left,
+                                             'is_exited_to_right': is_exited_to_right}
 
                     # 検出した車体間の座標の近さを計算
                     closes = []
@@ -249,46 +404,54 @@ def create_detected_obj_dicts(output, img, pre_detected_obj_dicts):
                     used_label_idxs.sort()
                     detected_obj_dicts[label_idx] = detected_obj_dict
 
-    # 同じ物体を複数回検出している問題を解決
-    for idx, closes in reversed(list(enumerate(closenesses))):
-        for close in closes:
-            if close < 100:
-                label_idx = list(detected_obj_dicts.keys())[idx]
-                detected_obj_dicts.pop(label_idx)
+    vanishing_label_idxs = []
+    if len(pre_detected_obj_dicts) != 0:
+        # 消えたラベル番号を特定
+        cur_label_idxs = detected_obj_dicts.keys()
+        for k in pre_detected_obj_dicts.keys():
+            label_idx = k
+            if not label_idx in cur_label_idxs:
+                vanishing_label_idxs.append(label_idx)
 
-    # 消えたラベル番号を特定
-    cur_label_idxs = detected_obj_dicts.keys()
-    vanished_label_idxs = []
-    for k in pre_detected_obj_dicts.keys():
-        label_idx = k
-        if not label_idx in cur_label_idxs:
-            vanished_label_idxs.append(label_idx)
+        # 車体の重なり判定
+        pre_label_idxs = pre_detected_obj_dicts.keys()
+        for vanishing_label_idx in vanishing_label_idxs:
+            for label_idx in pre_label_idxs:
+                if vanishing_label_idx != label_idx:
+                    # 前フレームで、X座標が重なっているか確認
+                    v1 = pre_detected_obj_dicts[vanishing_label_idx]
+                    v2 = pre_detected_obj_dicts[label_idx]
 
-    # 車体の重なり判定
-    pre_label_idxs = pre_detected_obj_dicts.keys()
-    for vanished_label_idx in vanished_label_idxs:
-        for label_idx in pre_label_idxs:
-            if vanished_label_idx != label_idx:
-                # 前フレームで、X座標が重なっているか確認
-                v1 = pre_detected_obj_dicts[vanished_label_idx]
-                v2 = pre_detected_obj_dicts[label_idx]
+                    l1 = v1['left']
+                    r1 = v1['right']
+                    l2 = v2['left']
+                    r2 = v2['right']
 
-                l1 = v1['left']
-                r1 = v1['right']
-                l2 = v2['left']
-                r2 = v2['right']
-
-                if l1 < l2 < r1 < r2 or l2 < l1 < r2 < r1:
-                    stack_label_idxs.append([vanished_label_idx, label_idx])
+                    if l1 < l2 < r1 < r2 or l2 < l1 < r2 < r1:
+                        stack_dict = {}
+                        stack_dict[vanishing_label_idx] = pre_detected_obj_dicts[vanishing_label_idx]
+                        stack_dict[label_idx] = pre_detected_obj_dicts[label_idx]
+                        stack_dicts.append(stack_dict)
 
     print('use_label_idxs:', use_label_idxs)
-    print('vanished_label_idxs:', vanished_label_idxs)
-    # print('appeared_label_idxs:', appeared_label_idxs)
-    print('stack_label_idxs:', stack_label_idxs)
-    print('closenesses:', closenesses)
+    print('vanishing_label_idxs:', vanishing_label_idxs)
+    if len(stack_dicts) == 0:
+        print('stack_dicts: None')
+    else:
+        print('stack_dicts:')
+        for i, d in enumerate(stack_dicts):
+            print('----------', i, '----------')
+            for k, v in d.items():
+                print('label_idx:', k, '=>', v)
+        print('-----------------------')
     print('detected_obj_dicts:')
-    for i, (k, v) in enumerate(detected_obj_dicts.items()):
+    for k, v in detected_obj_dicts.items():
         print('label_idx:', k, '=>', v)
+
+    print('ENTRY_FROM_LEFT_COUNT:', ENTRY_FROM_LEFT_COUNT)
+    print('ENTRY_FROM_RIGHT_COUNT:', ENTRY_FROM_RIGHT_COUNT)
+    print('EXIT_TO_LEFT_COUNT:', EXIT_TO_LEFT_COUNT)
+    print('EXIT_TO_RIGHT_COUNT:', EXIT_TO_RIGHT_COUNT)
 
     # ラベル番号に被りがないかチェック
     label_idxs_for_debug = detected_obj_dicts.keys()
@@ -400,10 +563,19 @@ if __name__ == '__main__':
         if ret:
             print(f'\n[frame {frame_count:5g}]')
 
+            '''
+            if frame_count < 30:
+                frame_count += 1
+                continue
+            '''
+
             if not width or not height:
                 height, width, _ = frame.shape
                 width = round(width * resize_ratio)
                 height = round(height * resize_ratio)
+
+                ENTRY_RANGES = [[round(width * 0.25), round(width * 0.4)], [round(width * 0.6), round(width * 0.75)]]
+                EXIT_RANGES = [[0, round(width * 0.25)], [round(width * 0.75), width]]
 
             frame = cv2.resize(frame, dsize=(width, height))
 
@@ -448,11 +620,12 @@ if __name__ == '__main__':
             classes = load_classes('data/coco.names')
             #colors = pkl.load(open("pallete", "rb"))
 
-            # 退出判定領域の範囲を描画
-            '''
-            cv2.rectangle(orig_im, (0, 0), (100, height), (255, 255, 255), -1)
-            cv2.rectangle(orig_im, (width - 100, 0), (width, height), (255, 255, 255), -1)
-            '''
+            # 侵入・退出判定領域の範囲を描画
+            im2 = np.zeros((height, width, 3), np.uint8)
+            cv2.rectangle(im2, (ENTRY_RANGES[0][0], 0), (ENTRY_RANGES[0][1], height), (255, 255, 255), -1)
+            cv2.rectangle(im2, (ENTRY_RANGES[1][0], 0), (ENTRY_RANGES[1][1], height), (255, 255, 255), -1)
+            orig_im = cv2.addWeighted(orig_im, 1, im2, 0.2, 0)
+
 
             pre_detected_obj_dicts = detected_obj_dicts
             detected_obj_dicts = create_detected_obj_dicts(output, orig_im, pre_detected_obj_dicts)
