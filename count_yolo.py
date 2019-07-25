@@ -113,6 +113,9 @@ def arg_parse():
     parser.add_argument("--reso", dest = 'reso', help =
                         "Input resolution of the network. Increase to increase accuracy. Decrease to increase speed",
                         default = "416", type = str)
+    parser.add_argument("--resize", dest = 'resize', help =
+                        "Resize ratio of input video.",
+                        default = "0.5", type = str)
     parser.add_argument("--display", dest = 'display', help =
                         "Display result or not.",
                         default = False, type = strtobool)
@@ -129,6 +132,7 @@ if __name__ == '__main__':
     args = arg_parse()
     confidence = float(args.confidence)
     nms_thesh = float(args.nms_thresh)
+    resize = float(args.resize)
     display = args.display
     update_database = args.update_database
     parking_name = args.parking_name
@@ -159,8 +163,8 @@ if __name__ == '__main__':
     videofile = args.video
 
     cap = cv2.VideoCapture(videofile)
-    video_size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-                  int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    video_size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * resize),
+                  int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * resize))
 
     assert cap.isOpened(), 'Cannot capture source'
 
@@ -196,13 +200,12 @@ if __name__ == '__main__':
             if not width or not height:
                 height, width, _ = frame.shape
 
-            frame = cv2.resize(frame, dsize=(width, height))
+            frame = cv2.resize(frame, dsize=(round(width * resize), round(height * resize)))
 
             start = timer()
             img, orig_im, dim = prep_image(frame, inp_dim)
 
             im_dim = torch.FloatTensor(dim).repeat(1,2)
-
 
             if CUDA:
                 im_dim = im_dim.cuda()
