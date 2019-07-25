@@ -15,8 +15,10 @@ colors = [(18, 0, 230),
 
 
 class Counter(object):
-    def __init__(self, video_size, class_names):
+    def __init__(self, video_size, class_names, resize=0.5):
+        print('video_size:', video_size)
         self.class_names = class_names
+        self.resize = resize
         self.width, self.height = video_size
         self.used_label_idxs = []
         self.overlap_dicts = []
@@ -47,17 +49,22 @@ class Counter(object):
 
         out_boxes_2 = []
         out_label_idxs = []
+        out_scores_2 = []
         out_classes_2 = []
         out_colors_2 = []
 
         for idx, x in enumerate(output):
-            left, top, right, bottom = map(int, x[1:5])
+            i = idx
+
+            box = [int(y) for y in x[1:5]]
+            left, top, right, bottom = box
             cls = int(x[-1])
-            label = self.class_names[cls]
+            predicted_class = self.class_names[cls]
+            label = predicted_class
 
             area = (right - left) * (bottom - top)
             # 小さく映っている車は排除
-            if area < self.width * self.height * 0.0087:
+            if area < 8000 * self.resize ** 2:
                 continue
 
             center = (int((right - left) / 2 + left), int((bottom - top) / 2 + top))
@@ -84,7 +91,7 @@ class Counter(object):
                         c_b = abs(bottom - v['bottom'])
                         close = c_l + c_t + c_r + c_b
 
-                        if close < (self.width + self.height) * 0.2:
+                        if close < 400 * self.resize ** 2:
                             break_flag = True
                             break
                     if break_flag: continue
@@ -126,8 +133,9 @@ class Counter(object):
                         self.used_label_idxs.append(label_idx)
                     self.used_label_idxs.sort()
                     detected_obj_dicts[label_idx] = detected_obj_dict
-                    out_boxes_2.append((left, top, right, bottom))
+                    out_boxes_2.append(box)
                     out_label_idxs.append(label_idx)
+
                     out_classes_2.append(cls)
                     out_colors_2.append(color)
                     label_idx += 1
@@ -140,8 +148,7 @@ class Counter(object):
 
                     break_flag = False
                     for max_distance in (40, 80, 120, 160, 200): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
-                        max_distance *= (self.width + self.height) * 0.0005
-
+                        max_distance *= self.resize ** 2
                         for k, v in self.pre_detected_obj_dicts.items():
                             pre_center = v['center']
                             pre_label_idx = k
@@ -236,8 +243,9 @@ class Counter(object):
                             self.used_label_idxs.append(label_idx)
                         self.used_label_idxs.sort()
                         detected_obj_dicts[label_idx] = detected_obj_dict
-                        out_boxes_2.append((left, top, right, bottom))
+                        out_boxes_2.append(box)
                         out_label_idxs.append(label_idx)
+
                         out_classes_2.append(cls)
                         out_colors_2.append(color)
                     # 前フレームに同一と思われる物体がある場合
@@ -251,7 +259,7 @@ class Counter(object):
                             c_b = abs(bottom - v['bottom'])
                             close = c_l + c_t + c_r + c_b
 
-                            if close < (self.width + self.height) * 0.2:
+                            if close < 400 * self.resize ** 2:
                                 break_flag = True
                                 break
                         if break_flag: continue
@@ -330,7 +338,6 @@ class Counter(object):
                                             cursor.execute("UPDATE perking SET nowcar = nowcar - 1 WHERE area = '" + parking_name + "'")
                                         else:
                                             cursor.execute("UPDATE perking SET nowcar = nowcar + 1 WHERE area = '" + prking_name + "'")
-
                             elif self.exit_to_right_range[0] < center[0] < self.exit_to_right_range[1]:
                                 # 左からの進入判定があり、右への退出判定がない場合
                                 if is_entried_from_left and not is_exited_to_right:
@@ -364,8 +371,9 @@ class Counter(object):
                             self.used_label_idxs.append(label_idx)
                         self.used_label_idxs.sort()
                         detected_obj_dicts[label_idx] = detected_obj_dict
-                        out_boxes_2.append((left, top, right, bottom))
+                        out_boxes_2.append(box)
                         out_label_idxs.append(label_idx)
+
                         out_classes_2.append(cls)
                         out_colors_2.append(color)
 
