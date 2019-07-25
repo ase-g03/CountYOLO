@@ -181,10 +181,10 @@ if __name__ == '__main__':
             host='localhost',
             user='root',
             passwd='',
-            db='perkingdb')
+            db='parkingdb')
         cursor = connection.cursor()
 
-        cursor.execute("SELECT enter FROM perking WHERE area = '" + parking_name + "'")
+        cursor.execute("SELECT enter FROM parking WHERE area = '" + parking_name + "'")
         rows = cursor.fetchall()
         enter_is_right = rows[0][0]
     else:
