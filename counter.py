@@ -41,7 +41,7 @@ class Counter(object):
         class_names = [c.strip() for c in class_names]
         return class_names
 
-    def process_on_frame(self, image, output, cursor, parking_name, enter_is_right):
+    def process_on_frame(self, image, output, connection, cursor, parking_name, enter_is_right):
         detected_obj_dicts = {}
         use_label_idxs = []
 
@@ -333,11 +333,12 @@ class Counter(object):
                                     self.exit_to_left_count += 1
 
                                     # データベースを更新する
-                                    if cursor is not None:
+                                    if connection is not None:
                                         if enter_is_right:
-                                            cursor.execute("UPDATE perking SET nowcar = nowcar - 1 WHERE area = '" + parking_name + "'")
+                                            cursor.execute("UPDATE parking SET nowcar = nowcar - 1 WHERE area = '" + parking_name + "'")
                                         else:
-                                            cursor.execute("UPDATE perking SET nowcar = nowcar + 1 WHERE area = '" + prking_name + "'")
+                                            cursor.execute("UPDATE parking SET nowcar = nowcar + 1 WHERE area = '" + parking_name + "'")
+                                        connection.commit()
                             elif self.exit_to_right_range[0] < center[0] < self.exit_to_right_range[1]:
                                 # 左からの進入判定があり、右への退出判定がない場合
                                 if is_entried_from_left and not is_exited_to_right:
@@ -345,11 +346,12 @@ class Counter(object):
                                     self.exit_to_right_count += 1
 
                                     # データベースを更新する
-                                    if cursor is not None:
+                                    if connection is not None:
                                         if enter_is_right:
-                                            cursor.execute("UPDATE perking SET nowcar = nowcar + 1 WHERE area = '" + parking_name + "'")
+                                            cursor.execute("UPDATE parking SET nowcar = nowcar + 1 WHERE area = '" + parking_name + "'")
                                         else:
-                                            cursor.execute("UPDATE perking SET nowcar = nowcar - 1 WHERE area = '" + prking_name + "'")
+                                            cursor.execute("UPDATE parking SET nowcar = nowcar - 1 WHERE area = '" + parking_name + "'")
+                                        connection.commit()
 
                             detected_obj_dict = {'left': left,
                                                  'top': top,

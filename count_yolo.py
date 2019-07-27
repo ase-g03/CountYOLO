@@ -188,6 +188,7 @@ if __name__ == '__main__':
         rows = cursor.fetchall()
         enter_is_right = rows[0][0]
     else:
+        connection = None
         cursor = None
         enter_is_right = None
 
@@ -218,6 +219,15 @@ if __name__ == '__main__':
             end = timer()
             print('time:', end - start)
 
+            if type(output) == int:
+                frames += 1
+                if display:
+                    cv2.imshow("frame", orig_im)
+                    key = cv2.waitKey(1)
+                    if key & 0xFF == ord('q'):
+                        break
+                continue
+
             im_dim = im_dim.repeat(output.size(0), 1)
             scaling_factor = torch.min(inp_dim/im_dim,1)[0].view(-1,1)
 
@@ -230,7 +240,7 @@ if __name__ == '__main__':
                 output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, im_dim[i,0])
                 output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, im_dim[i,1])
 
-            out_boxes, out_label_idxs, out_classes, out_colors = counter.process_on_frame(orig_im, output, cursor, parking_name, enter_is_right)
+            out_boxes, out_label_idxs, out_classes, out_colors = counter.process_on_frame(orig_im, output, connection, cursor, parking_name, enter_is_right)
 
             if display:
                 result_im = draw_boxes(out_boxes, out_label_idxs, out_classes, out_colors, orig_im, classes)
@@ -242,3 +252,6 @@ if __name__ == '__main__':
             frames += 1
         else:
             break
+
+    if update_database:
+      connection.close()
