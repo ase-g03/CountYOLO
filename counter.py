@@ -147,7 +147,7 @@ class Counter(object):
                     color = None
 
                     break_flag = False
-                    for max_distance in (40, 80, 120, 160, 200): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
+                    for max_distance in range(40, 240, 40): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
                         max_distance *= ((self.width + self.height) / (1280 + 720)) ** 2
                         for k, v in self.pre_detected_obj_dicts.items():
                             pre_center = v['center']
