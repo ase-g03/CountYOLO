@@ -64,7 +64,7 @@ class Counter(object):
 
             area = (right - left) * (bottom - top)
             # 小さく映っている車は排除
-            if area < 8000 * self.resize ** 2:
+            if area < 8000 * (self.width * self.height) * 0.000001085069444:
                 continue
 
             center = (int((right - left) / 2 + left), int((bottom - top) / 2 + top))
@@ -91,7 +91,7 @@ class Counter(object):
                         c_b = abs(bottom - v['bottom'])
                         close = c_l + c_t + c_r + c_b
 
-                        if close < 400 * self.resize ** 2:
+                        if close < 400 * (self.width * self.height) * 0.000001085069444:
                             break_flag = True
                             break
                     if break_flag: continue
@@ -148,7 +148,7 @@ class Counter(object):
 
                     break_flag = False
                     for max_distance in (40, 80, 120, 160, 200): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
-                        max_distance *= self.resize ** 2
+                        max_distance *= ((self.width + self.height) / (1280 + 720)) ** 2
                         for k, v in self.pre_detected_obj_dicts.items():
                             pre_center = v['center']
                             pre_label_idx = k
@@ -259,7 +259,7 @@ class Counter(object):
                             c_b = abs(bottom - v['bottom'])
                             close = c_l + c_t + c_r + c_b
 
-                            if close < 400 * self.resize ** 2:
+                            if close < 400 * (self.width * self.height) * 0.000001085069444:
                                 break_flag = True
                                 break
                         if break_flag: continue
