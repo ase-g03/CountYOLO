@@ -15,11 +15,12 @@ colors = [(18, 0, 230),
 
 
 class Counter(object):
-    def __init__(self, video_size, class_names, resize=0.5):
+    def __init__(self, video_size, fps, class_names, resize=0.5):
         print('video_size:', video_size)
         self.class_names = class_names
         self.resize = resize
         self.width, self.height = video_size
+        self.fps = fps
         self.used_label_idxs = []
         self.overlap_dicts = []
         self.use_labels = ['car', 'bus', 'truck']
@@ -147,7 +148,9 @@ class Counter(object):
                     color = None
 
                     break_flag = False
-                    for max_distance in range(40, 240, 40): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
+
+                    distance = round(40 * 30 / self.fps)
+                    for max_distance in range(distance, distance * 5 + 1, distance): # なるべく一番近いものが優先されるように、ちょっとずつ調べる
                         max_distance *= ((self.width + self.height) / (1280 + 720)) ** 2
                         for k, v in self.pre_detected_obj_dicts.items():
                             pre_center = v['center']

@@ -166,6 +166,8 @@ if __name__ == '__main__':
     video_size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * resize),
                   int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * resize))
 
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
     assert cap.isOpened(), 'Cannot capture source'
 
     frames = 0
@@ -173,7 +175,7 @@ if __name__ == '__main__':
     height = 0
 
     classes = load_classes('data/coco.names')
-    counter = Counter(video_size, classes)
+    counter = Counter(video_size, fps, classes)
 
     if update_database:
         import MySQLdb
